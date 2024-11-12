@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RR - User Query Metadata Store</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">RR - Research of Research</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+            <ul class="navbar-nav">
+                <!-- Menu Items -->
+                <li class="nav-item">
+                    <a class="nav-link active" href="/power_search">Power Search</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/metadata">Search Metadata Generator</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/metadata_store">MetaData Store</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/chat">RAG Chat</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+
+<div class="container mt-5">
+    <div class="row fw-bold border-bottom pb-2 mb-3">
+        <div class="col-2">ID</div>
+        <div class="col-2">User ID</div>
+        <div class="col-2">Topic Count</div>
+        <div class="col-3">Created Date</div>
+        <div class="col-1">Version</div>
+        <div class="col-2 text-center">Actions</div>
+    </div>
+
+    <!-- Session List -->
+    <div class="list-group">
+    {% for session in sessions %}
+        <div class="list-group-item py-2"> <!-- Smaller padding for compact display -->
+            <div class="row align-items-center">
+                <div class="col-2"><p>{{ session.id[:7] }}</p></div> <!-- Display only first 7 chars of ID -->
+                <div class="col-2"><p>{{ session.user_id }}</p></div>
+                <div class="col-2"><p>{{ session.topic_count }}</p></div>
+                <div class="col-3"><p>{{ session.created_at }}</p></div>
+                <div class="col-1"><p>{{ session.metadata.version }}</p></div>
+                <div class="col-2 text-center">
+                    <!-- Load, Delete, Copy ID, and Search buttons -->
+                    <button class="btn btn-primary btn-sm me-1" data-session="{{ session | tojson | safe }}" onclick="loadQuery({{ session }})">Load</button>
+                    <button class="btn btn-danger btn-sm me-1" onclick="deleteSession('{{ session.id }}')">Delete</button>
+                    <button class="btn btn-secondary btn-sm me-1" onclick="copyID('{{ session.id }}', this)">Copy ID</button>
+                    <button class="btn btn-success btn-sm" onclick="searchSession('{{ session.id }}')">Search</button>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+    <!-- Placeholder for reconstructed tabs -->
+    <div class="mt-5" id="reconstructedTabs">
+        <h2>Reconstructed Session</h2>
+        <ul class="nav nav-tabs" id="tabList"></ul>
+        <div class="tab-content" id="tabContent"></div>
+
+        <div class="col-2 d-flex justify-content-center align-items-center">
+            <button id="saveChangesBtn" class="btn btn-success me-1" onclick="saveChanges()" style="display: none;">Save</button>
+            <button id="updateBtn" class="btn btn-primary me-1" onclick="update()" style="display: none;">Update</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+      function searchSession(sessionId) {
+        // Redirect to power_search page with the session ID as a query parameter
+        window.location.href = `/power_search?id=${encodeURIComponent(sessionId)}`;
+    }
+
+    let sessionData = null;
+    function deleteSession(id) {
+        fetch(`/delete_session/${id}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Session deleted successfully.');
+                location.reload(); // Reload the page to reflect changes
+            } else {
+                alert('Failed to delete session.');
+            }
+        })
+        .catch(error => console.error('Error deleting session:', error));
+    }
+
+    // Copy ID to clipboard
+   function copyID(id, buttonElement) {
+    navigator.clipboard.writeText(id).then(() => {
+        buttonElement.textContent = 'Copied!';
+
+        // Optionally, reset the text back to "Copy ID" after a short delay
+        setTimeout(() => {
+            buttonElement.textContent = 'Copy ID';
+        }, 2000); // Reset after 2 seconds
+    }).catch(err => {
+        console.error('Failed to copy ID:', err);
+    });
+    }
+    function limitSelection(checkbox) {
+        const tabPane = checkbox.closest('.tab-pane');
+        const selectedCheckboxes = tabPane.querySelectorAll('.form-check-input:checked');
+        if (selectedCheckboxes.length > 5) {
+            checkbox.checked = false;
+            alert('You can select up to 5 topics only in this tab.');
+        }
+    }
+
+    function loadQuery(sessionJson) {
+        // Parse session data and store it globally
+        const layers = [];
+        sessionData = structuredClone(sessionJson)
+        const allTopics = sessionData.all_topics;
+        const selectedTopics = sessionData.selected_topics;
+
+        allTopics.forEach((topics, index) => {
+            const layerNumber = index + 1;
+            const selected = selectedTopics[index] || [];
+            layers.push({
+                layer_number: layerNumber,
+                topics: topics,
+                selected_topics: selected
+            });
+        });
+
+        // Clear existing tabs and content
+        document.getElementById('tabList').innerHTML = '';
+        document.getElementById('tabContent').innerHTML = '';
+
+        // Build tabs with the constructed layers
+        buildTab(layers);
+        document.getElementById('saveChangesBtn').style.display = 'block';
+        document.getElementById('updateBtn').style.display = 'block';
+    }
+
+    function buildTab(layers) {
+        const tabList = document.getElementById('tabList');
+        const tabContent = document.getElementById('tabContent');
+
+        layers.forEach((layer) => {
+            const layerNumber = layer.layer_number;
+
+            // Create tab
+            const newTab = document.createElement('li');
+            newTab.className = 'nav-item';
+            newTab.innerHTML = `<a class="nav-link" id="tab-${layerNumber}" data-bs-toggle="tab" href="#content-${layerNumber}">${layerNumber}</a>`;
+            tabList.appendChild(newTab);
+
+            // Create tab content
+            const newTabPane = document.createElement('div');
+            newTabPane.className = 'tab-pane fade';
+            newTabPane.id = `content-${layerNumber}`;
+
+            let tabContentHtml = `<p>Select up to 5 topics:</p><div class="list-group">`;
+
+            layer.topics.forEach(topic => {
+                const isChecked = layer.selected_topics.includes(topic) ? 'checked' : '';
+                tabContentHtml += `<label class="list-group-item">
+                    <input class="form-check-input me-1" type="checkbox" value="${topic}" ${isChecked} name="layer_${layerNumber}" onclick="limitSelection(this)">
+                    ${topic}
+                </label>`;
+            });
+
+            tabContentHtml += `</div>`;
+            newTabPane.innerHTML = tabContentHtml;
+            tabContent.appendChild(newTabPane);
+        });
+
+        // Activate the first tab
+        const firstTab = document.querySelector(`#tabList .nav-link`);
+        const firstTabContent = document.querySelector(`#tabContent .tab-pane`);
+        if (firstTab) firstTab.classList.add('active');
+        if (firstTabContent) firstTabContent.classList.add('show', 'active');
+    }
+
+    function saveChanges() {
+        const updatedLayers = [];
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        console.log(tabPanes)
+        let temp = structuredClone(sessionData);
+        let selectedTopics = []
+        tabPanes.forEach(tabPane => {
+            const layerNumber = tabPane.id.split('-')[1];
+            const checkboxes = tabPane.querySelectorAll('.form-check-input');
+            const topics = [];
+            const selectedSubTopics = [];
+
+            checkboxes.forEach(checkbox => {
+                topics.push(checkbox.value);
+                if (checkbox.checked) {
+                    selectedSubTopics.push(checkbox.value);
+                }
+            });
+            selectedTopics.push(selectedSubTopics)
+        });
+
+
+
+        const data = {"layers":selectedTopics,"allTopics":temp.all_topics, "version":temp.metadata.version}
+
+        fetch('/save_topics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => alert('Changes saved successfully.'))
+        .catch(error => console.error('Error saving changes:', error));
+
+    }
+    function update() {
+        const updatedLayers = [];
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        console.log(tabPanes)
+        let temp = structuredClone(sessionData);
+        let selectedTopics = []
+        tabPanes.forEach(tabPane => {
+            const layerNumber = tabPane.id.split('-')[1];
+            const checkboxes = tabPane.querySelectorAll('.form-check-input');
+            const topics = [];
+            const selectedSubTopics = [];
+
+            checkboxes.forEach(checkbox => {
+                topics.push(checkbox.value);
+                if (checkbox.checked) {
+                    selectedSubTopics.push(checkbox.value);
+                }
+            });
+            selectedTopics.push(selectedSubTopics)
+        });
+
+
+
+        const data = {"layers":selectedTopics,"allTopics":temp.all_topics, "version":temp.metadata.version+1,"id":temp.id}
+
+        fetch('/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => alert('Changes update successfully.'))
+        .catch(error => console.error('Error saving changes:', error));
+
+    }
+</script>
+</body>
+</html>

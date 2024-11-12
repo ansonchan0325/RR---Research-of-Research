@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Search Metadata Generator - RR</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Center the form and set a max-width */
+        .form-container {
+            max-width: 600px;
+            margin: 0 auto; /* Center horizontally */
+        }
+        .tab-content {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<!-- Hidden inputs to keep track of current depth and recursive depth -->
+<input type="hidden" id="currentDepth" value="{{ current_depth or 1 }}">
+<input type="hidden" id="recursiveDepth" value="{{ recursive_depth }}">
+<input type="hidden" id="searchQuery" value="{{ search_query }}">
+<input type="hidden" id="searchEngine" value="{{ search_engine }}">
+
+    <!-- Header Menu (same as in index.html) -->
+
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">RR - Research of Research</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+            <ul class="navbar-nav">
+                <!-- Menu Items -->
+                <li class="nav-item">
+                    <a class="nav-link active" href="/power_search">Power Search</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/metadata">Search Metadata Generator</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/metadata_store">MetaData Store</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/chat">RAG Chat</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+
+    <!-- Content Below Header -->
+    <div class="container mt-5">
+        <h1 class="text-center">Search Metadata Generator</h1>
+        <div class="form-container">
+            <form method="post">
+                <div class="mb-3">
+                    <label for="searchQuery" class="form-label">Search Query:</label>
+                    <input type="text" class="form-control" id="searchQuery" name="search_query" placeholder="Enter your search query" required>
+                </div>
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="enableWebSearch" onclick="toggleSearchEngine()">
+                    <label class="form-check-label" for="enableWebSearch">Enable Web Search</label>
+                </div>
+                <div class="mb-3" id="searchEngineContainer" style="display: none;">
+                    <label for="searchEngine" class="form-label">Search Engine:</label>
+                    <select class="form-select" id="searchEngine" name="search_engine">
+                        <option value="bing_search">Bing Search</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="recursiveDepth" class="form-label">Stack Depth:</label>
+                    <input type="number" class="form-control" id="recursiveDepth" name="recursive_depth" min="1" max="5" placeholder="Enter depth level 1-5">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Generate Metadata</button>
+            </form>
+
+            {% if search_query %}
+            <hr>
+            <h2>Results:</h2>
+            <p><strong>Search Query:</strong> {{ search_query }}</p>
+            <p><strong>Search Engine:</strong> {{ search_engine }}</p>
+            <p><strong>Recursive Depth:</strong> {{ recursive_depth }}</p>
+            <!-- Display generated topics -->
+            <div class="tab-content" id="tabContent">
+                <ul class="nav nav-tabs" id="tabList">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="tab-1" data-bs-toggle="tab" href="#content-1">1</a>
+                    </li>
+                </ul>
+                <div class="tab-pane fade show active" id="content-1">
+                    <h2>Tab 1</h2>
+                    <p>Select up to 5 topics:</p>
+                    <div class="list-group">
+                        {% for topic in top_topics %}
+                            <label class="list-group-item">
+                                <input class="form-check-input me-1" type="checkbox" value="{{ topic }}" name="selected_topics" onclick="limitSelection(this)">
+                                {{ topic }}
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <button class="btn btn-primary mt-3" onclick="addNextLayer()">Next Layer</button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="form-container">
+    <!-- Your existing form and content -->
+
+    <!-- Loading Bar -->
+    <div id="loadingBar" class="text-center my-3" style="display: none;">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading, please wait...</p>
+    </div>
+
+    <!-- The rest of your content -->
+    </div>
+    <div id="layeredListContainer" class="form-container"></div>
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+
+     function limitSelection(checkbox) {
+    // Find the closest parent tab-pane
+    const tabPane = checkbox.closest('.tab-pane');
+    console.log(tabPane)
+    // Select checked checkboxes within this tab
+    const selectedCheckboxes = tabPane.querySelectorAll('.form-check-input:checked');
+    if (selectedCheckboxes.length > 5) {
+        checkbox.checked = false;
+        alert('You can select up to 5 topics only in this tab.');
+    }
+}
+
+        function toggleSearchEngine() {
+    const searchEngineContainer = document.getElementById('searchEngineContainer');
+    const enableWebSearch = document.getElementById('enableWebSearch');
+    if (enableWebSearch.checked) {
+        searchEngineContainer.style.display = 'block';
+    } else {
+        searchEngineContainer.style.display = 'none';
+    }
+}
+
+
+function removeTabsAfter(index) {
+    const tabList = document.getElementById('tabList');
+    const tabContent = document.getElementById('tabContent');
+    // Remove tabs
+    const tabsToRemove = Array.from(tabList.children).slice(index);
+    tabsToRemove.forEach(tab => tab.remove());
+
+    // Remove tab panes
+    const panesToRemove = Array.from(tabContent.children).slice(index+1);
+    panesToRemove.forEach(pane => pane.remove());
+}
+function addNextLayer() {
+    const tabList = document.getElementById('tabList');
+    const tabContent = document.getElementById('tabContent');
+    const loadingBar = document.getElementById('loadingBar');
+
+    // Identify the index of the current active tab
+    const activeTabLink = document.querySelector('#tabList .nav-link.active');
+    let activeTabPane = document.querySelectorAll('.tab-pane.active')
+    // filter activeTabPane to get id starting with content-
+    activeTabPane = Array.from(activeTabPane).filter(tab => tab.id.startsWith('content-'))[0];
+    const currentTabIndex = Array.from(tabList.children).indexOf(activeTabLink.parentElement) + 1;
+
+    // Access values from hidden inputs
+    const recursiveDepth = parseInt(document.getElementById('recursiveDepth').value) || 1;
+    let currentDepth = currentTabIndex;
+
+    if (currentDepth >= recursiveDepth) {
+        alert('Maximum stack depth reached.');
+        return;
+    }
+
+    // Get selected topics from the active tab only
+    const selectedTopics = Array.from(activeTabPane.querySelectorAll('.form-check-input:checked')).map(cb => cb.value);
+    if (selectedTopics.length === 0) {
+        alert('Please select at least one topic.');
+        return;
+    }
+
+    // Remove tabs and content after the current tab
+    removeTabsAfter(currentTabIndex);
+
+    // Update current depth in the hidden input
+    document.getElementById('currentDepth').value = currentDepth;
+    const formData = new FormData();
+    formData.append('search_query', document.getElementById('searchQuery').value || '');
+    formData.append('search_engine', document.getElementById('searchEngine').value || '');
+    formData.append('recursive_depth', recursiveDepth);
+    formData.append('current_depth', currentDepth);
+    selectedTopics.forEach(topic => formData.append('selected_topics', topic));
+
+    // Show the loading bar
+    loadingBar.style.display = 'block';
+
+    fetch('/metadata', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => { throw new Error(data.error); });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        // Create new tab
+        const newTabIndex = currentTabIndex + 1;
+        const newTab = document.createElement('li');
+        newTab.className = 'nav-item';
+        newTab.innerHTML = `<a class="nav-link" id="tab-${newTabIndex}" data-bs-toggle="tab" href="#content-${newTabIndex}">${newTabIndex}</a>`;
+        tabList.appendChild(newTab);
+
+        // Create new tab content
+        const newTabPane = document.createElement('div');
+        newTabPane.className = 'tab-pane fade';
+        newTabPane.id = `content-${newTabIndex}`;
+        newTabPane.innerHTML = generateTabContent(data.new_topics, newTabIndex, newTabIndex === recursiveDepth,selectedTopics);
+        tabContent.appendChild(newTabPane);
+
+        // Activate the new tab using Bootstrap's Tab API
+        var triggerEl = document.querySelector(`#tab-${newTabIndex}`);
+        var tab = new bootstrap.Tab(triggerEl);
+        tab.show();
+    })
+    .catch(error => {
+        alert(error.message);
+    })
+    .finally(() => {
+        // Hide the loading bar
+        loadingBar.style.display = 'none';
+    });
+}
+
+function generateTabContent(topics, tabIndex, isLastTab, selectedSubtopics = []) {
+    // Generate a unique identifier for this tab content to ensure IDs are unique
+    const uniqueId = 'tabContent_' + tabIndex + '_' + Date.now();
+    // Collect all unique immediate parent subtopics and build mapping from subtopics to topics
+    console.log(selectedSubtopics)
+    const subtopicsSet = new Set();
+    const subtopicToTopics = {};
+
+    topics.forEach(topic => {
+        let subtopics = topic.split(' | ').map(s => s.trim());
+        let mainTopic = subtopics.pop(); // Remove and get the main topic (assumed to be last)
+        // Get the immediate parent subtopic
+        if (subtopics.length > 0) {
+            const parentSubtopic = subtopics[subtopics.length - 1]; // Immediate parent subtopic
+
+
+            subtopicsSet.add(parentSubtopic);
+
+            if (!subtopicToTopics[parentSubtopic]) {
+                subtopicToTopics[parentSubtopic] = [];
+            }
+            subtopicToTopics[parentSubtopic].push({ topic: topic, mainTopic: mainTopic });
+        }
+    });
+    // If there are no subtopics to display, inform the user
+    if (subtopicsSet.size === 0) {
+        return `<h2>Tab ${tabIndex}</h2><p>No more subtopics available.</p>`;
+    }
+
+    // Generate tabs
+    let tabs = `<ul class="nav nav-tabs" id="myTab${uniqueId}" role="tablist">`;
+    let tabContent = `<div class="tab-content" id="myTabContent${uniqueId}">`;
+
+    let isFirstTab = true;
+
+    subtopicsSet.forEach(subtopic => {
+        // Use uniqueId to ensure IDs are unique even if subtopic names repeat
+        let subtopicId = subtopic.replace(/\s+/g, '_') + '_' + uniqueId;
+
+        tabs += `
+        <li class="nav-item" role="presentation">
+            <button class="nav-link ${isFirstTab ? 'active' : ''}" id="${subtopicId}-tab" data-bs-toggle="tab" data-bs-target="#${subtopicId}" type="button" role="tab">${subtopic}</button>
+        </li>
+        `;
+
+        tabContent += `
+        <div class="tab-pane fade ${isFirstTab ? 'show active' : ''}" id="${subtopicId}" role="tabpanel">
+            <div class="list-group mt-3">
+        `;
+
+        // Generate the list of topics under this subtopic
+        subtopicToTopics[subtopic].forEach(item => {
+            tabContent += `<label class="list-group-item">
+                    <input class="form-check-input me-1" type="checkbox" value="${item.topic}" name="selected_topics_tab_${tabIndex}" onclick="limitSelection(this)">
+                    ${item.mainTopic}
+                </label>`;
+        });
+
+        tabContent += `
+            </div>
+        </div>
+        `;
+
+        isFirstTab = false;
+    });
+
+    tabs += '</ul>';
+    tabContent += '</div>';
+
+    let content = `
+    <h2>Tab ${tabIndex}</h2>
+    <p>Select up to 5 topics:</p>
+    ${tabs}
+    ${tabContent}
+    `;
+
+    if (isLastTab) {
+        content += `<button class="btn btn-success mt-3" onclick="collectData()">Collect</button>`;
+    } else {
+        content += `<button class="btn btn-primary mt-3" onclick="addNextLayer()">Next Layer</button>`;
+    }
+
+    return content;
+}
+
+
+function collectData() {
+    const tabContent = document.getElementById('tabContent');
+    const layers = [];
+
+    // Iterate through each tab pane to collect topics for each layer
+    let tabPanes = tabContent.querySelectorAll('.tab-pane');
+    //filters tabPanes
+    tabPanes = Array.from(tabPanes).filter(tab => tab.id.startsWith('content-'));
+    tabPanes.forEach((tabPane, index) => {
+        const topics = Array.from(tabPane.querySelectorAll('.form-check-input')).map(cb => cb.value);
+        const selectedTopics = Array.from(tabPane.querySelectorAll('.form-check-input:checked')).map(cb => cb.value);
+
+        // Construct layer object
+        layers.push({
+            layer_number: index + 1,
+            topics: topics,  // All topics generated in this layer
+            selected_topics: selectedTopics  // Topics selected by the user in this layer
+        });
+    });
+    // Pass the collected layers to create a layered list for display
+    console.log("layers",layers)
+    const allSelectedTopics = layers.flatMap(layer => layer.selected_topics); // Flatten selected topics across all layers
+    // get all topics with their layer number
+    let allTopics = [];
+    // get recursive depth
+
+    const recursiveDepth = parseInt(document.getElementById('recursiveDepth').value) || 1;
+    for(let i=0;i<recursiveDepth;i++){
+        let topics = layers[i].topics;
+        allTopics.push(
+             topics
+        )
+    }
+    console.log("allTopics",allTopics)
+    console.log("allSelectedTopics",allSelectedTopics)
+    createLayeredList(allSelectedTopics,allTopics);
+
+}
+
+function createLayeredList(allSelectedTopics,allTopics) {
+    const container = document.getElementById('layeredListContainer');
+    container.innerHTML = ''; // Clear previous content
+
+    // Create an object to group topics by their layer
+    const layers = {};
+
+    allSelectedTopics.forEach(topic => {
+        const depth = topic.split('|').length;
+        if (!layers[depth]) {
+            layers[depth] = new Set(); // Use Set to prevent duplicates
+        }
+        layers[depth].add(topic.trim());
+    });
+
+    // Get layers sorted by depth
+    const sortedLayers = Object.keys(layers).sort((a, b) => a - b);
+
+    // Create and append layers to the container
+    sortedLayers.forEach(layerNumber => {
+        const layerHeading = document.createElement('h4');
+        layerHeading.className = 'text-primary mt-3';
+        layerHeading.textContent = `Layer ${layerNumber}:`;
+        container.appendChild(layerHeading);
+
+        const listGroup = document.createElement('ul');
+        listGroup.className = 'list-group border mb-3';
+
+        layers[layerNumber].forEach(topic => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item bg-white border-0 ps-4 d-flex justify-content-between align-items-center';
+
+            let topicText = document.createElement('span');
+            topicText.textContent = topic;
+            listItem.appendChild(topicText);
+
+            // Edit Button
+            const editButton = document.createElement('button');
+            editButton.className = 'btn btn-sm btn-outline-secondary ms-2';
+            editButton.textContent = 'Edit';
+
+            // Define Edit functionality
+            function handleEdit() {
+                // Create a new input element with the topic text
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = topicText.textContent;
+                input.className = 'form-control me-2';
+
+                // Replace topicText with the input field
+                listItem.replaceChild(input, topicText);
+
+                // Change Edit button to Save
+                editButton.textContent = 'Save';
+
+                // Assign Save functionality
+                editButton.onclick = handleSave;
+
+                function handleSave() {
+                    // Create a new span for the updated text
+                    const updatedText = document.createElement('span');
+                    updatedText.textContent = input.value.trim();
+
+                    // Replace input with updated text span
+                    listItem.replaceChild(updatedText, input);
+
+                    // Update the layers data structure with the new topic
+                    layers[layerNumber].delete(topic); // Remove the old topic
+                    topic = updatedText.textContent; // Update the topic variable
+                    layers[layerNumber].add(topic); // Add the new topic
+
+                    // Restore Edit functionality to the button
+                    editButton.textContent = 'Edit';
+                    topicText = updatedText; // Update the reference to topicText
+                    editButton.onclick = handleEdit;
+                }
+            }
+
+            // Assign initial Edit functionality
+            editButton.onclick = handleEdit;
+
+            // Append edit button to list item
+            listItem.appendChild(editButton);
+            listGroup.appendChild(listItem);
+        });
+
+        container.appendChild(listGroup);
+    });
+    // Add a "Save" button at the end of the list if it doesn’t exist
+    console.log(allTopics)
+    let saveButton = document.getElementById('saveButton');
+    if (!saveButton) {
+        saveButton = document.createElement('button');
+        saveButton.className = 'btn btn-primary mt-3';
+        saveButton.textContent = 'Save';
+        saveButton.id = 'saveButton';
+        saveButton.onclick = () => saveTopics(layers,allTopics);
+        container.appendChild(saveButton);
+    }
+}
+function saveTopics(layers,allTopics) {
+    // layers is object with layer number as key and topics(set) as value, convert it into an array of objects
+    layers = Object.keys(layers).map(layerNumber => {
+            return  Array.from(layers[layerNumber])
+    });
+    fetch('/save_topics', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ layers: layers , allTopics: allTopics})
+    })
+    .then(response => response.json())
+    .then(data => {
+        const saveButton = document.getElementById('saveButton');
+        saveButton.className = 'btn btn-secondary mt-3';
+        saveButton.textContent = 'Finished!';
+        saveButton.disabled = true;
+        console.log('Data saved successfully:', data);
+    })
+    .catch(error => {
+        console.error('Error saving data:', error);
+    });
+}
+
+    </script>
+</body>
+</html>
